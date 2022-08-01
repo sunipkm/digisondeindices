@@ -17,8 +17,10 @@ def downloadfile(time: np.ndarray, station: str, force: bool) -> list[Path]:
 
     with importlib.resources.path(__package__, "__init__.py") as fn:
         path = fn.parent / "data"
-        if not path.is_dir():
+        if not path.exists():
             os.makedirs(path, mode=0o777, exist_ok=False)
+        if not path.is_dir():
+            raise NotADirectoryError(path)
 
     time = np.asarray(time)
     tnow = datetime.today()
