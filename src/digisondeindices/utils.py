@@ -9,6 +9,8 @@ import os
 def checkIfExists(time: np.ndarray, station: str) -> list[Path]:
     with importlib.resources.path(__package__, "__init__.py") as fn:
         path = fn.parent / "data"
+        if not path.exists():
+            os.mkdir(path, 0o777)
         if not path.is_dir():
             raise NotADirectoryError(path)
     
