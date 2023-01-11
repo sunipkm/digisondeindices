@@ -3,8 +3,7 @@ from pathlib import Path
 import ftplib
 import requests
 from urllib.parse import urlparse
-from datetime import datetime, timedelta
-import subprocess
+from datetime import datetime
 import socket
 import requests.exceptions
 import numpy as np
@@ -13,7 +12,8 @@ import os
 
 TIMEOUT = 15  # seconds
 
-def downloadfile(time: np.ndarray, station: str, force: bool) -> list[Path]:
+
+def downloadfile(time: np.ndarray, station: str, force: bool, dmuf: int = 3000) -> list[Path]:
 
     with importlib.resources.path(__package__, "__init__.py") as fn:
         path = fn.parent / "data"
@@ -27,25 +27,32 @@ def downloadfile(time: np.ndarray, station: str, force: bool) -> list[Path]:
     tmin = time.min()
     tmax = time.max()
     if tmin > tnow:
-        raise RuntimeError('DIDBase package does not allow prediction retrieval.')
+        raise RuntimeError(
+            'DIDBase package does not allow prediction retrieval.')
 
     flist = []
     for t in time:
         if t < tnow:  # past
-            url = 'https://lgdc.uml.edu/common/DIDBGetValues?ursiCode=%s&charName=foF2,MUFD,hmF2,B0,TEC&DMUF=3000&fromDate=%d.01.01+00:00:00&toDate=%d.01.01+00:00:00'%(station, t.year, t.year + 1)
-            fn = path / ('%s_%d.txt'%(station, t.year))
-            if force or not exist_ok(fn, tmax):
+            url = 'https://lgdc.uml.edu/common/DIDBGetValues?ursiCode=%s&charName=hmE,foE,hmF1,foF1,hmF2,foF2,hF,hF2,yF1,yF2,B0,TEC,MUFD&DMUF=%d&fromDate=%d.01.01+00:00:00&toDate=%d.01.01+00:00:00'
+            url = url % (station, dmuf, t.year, t.year + 1)
+            fn = path / ('%s_%d_%d.nc' % (station, t.year, dmuf)) # try to load the nc file
+            
+            if force or not exist_ok(fn, tmax): # forced or file expired or file does not exist
                 try:
-                    download(url, fn)
-                    flist.append(fn)
-                except ConnectionError:  
+                    fn_txt = fn.with_suffix('.txt')  # get text file name
+                    if force or not exist_ok(fn, tmax): # if text file does not exist or redownload is forced
+                        download(url, fn_txt)  # download text file
+                    flist.append(fn_txt)  # append downloaded text file to list
+                    if fn.exists(): # if nc file exists
+                        fn.unlink()  # unlink nc file
+                except ConnectionError:
                     raise ConnectionError(url)
             else:
-                flist.append(fn)
+                flist.append(fn)  # append existing nc file
 
         else:
-            raise RuntimeError('DIDBase package does not allow prediction retrieval.')
-
+            raise RuntimeError(
+                'DIDBase package does not allow prediction retrieval.')
     return list(set(flist))  # dedupe
 
 
@@ -104,4 +111,3 @@ def exist_ok(fn: Path, tmax: datetime = None) -> bool:
         ok &= tmax < datetime.utcfromtimestamp(finf.st_mtime)
 
     return ok
-
