@@ -35,15 +35,18 @@ def downloadfile(time: np.ndarray, station: str, force: bool, dmuf: int = 3000) 
         if t < tnow:  # past
             url = 'https://lgdc.uml.edu/common/DIDBGetValues?ursiCode=%s&charName=hmE,foE,hmF1,foF1,hmF2,foF2,hF,hF2,yF1,yF2,B0,TEC,MUFD&DMUF=%d&fromDate=%d.01.01+00:00:00&toDate=%d.01.01+00:00:00'
             url = url % (station, dmuf, t.year, t.year + 1)
-            fn = path / ('%s_%d_%d.nc' % (station, t.year, dmuf)) # try to load the nc file
-            
-            if force or not exist_ok(fn, tmax): # forced or file expired or file does not exist
+            # try to load the nc file
+            fn = path / ('%s_%d_%d.nc' % (station, t.year, dmuf))
+
+            # forced or file expired or file does not exist
+            if force or not exist_ok(fn, tmax):
                 try:
                     fn_txt = fn.with_suffix('.txt')  # get text file name
-                    if force or not exist_ok(fn, tmax): # if text file does not exist or redownload is forced
+                    # if text file does not exist or redownload is forced
+                    if force or not exist_ok(fn, tmax):
                         download(url, fn_txt)  # download text file
                     flist.append(fn_txt)  # append downloaded text file to list
-                    if fn.exists(): # if nc file exists
+                    if fn.exists():  # if nc file exists
                         fn.unlink()  # unlink nc file
                 except ConnectionError:
                     raise ConnectionError(url)
@@ -70,12 +73,40 @@ def http_download(url: str, fn: Path):
     if not fn.parent.is_dir():
         raise NotADirectoryError(fn.parent)
 
+    has_tqdm = False
     try:
-        R = requests.get(url, allow_redirects=True, timeout=TIMEOUT)
-        if R.status_code == 200:
-            fn.write_text(R.text)
+        from tqdm import tqdm
+        has_tqdm = True
+    except ImportError:
+        pass
+
+    try:
+        if has_tqdm:
+            response = requests.get(
+                url, allow_redirects=True, stream=True, timeout=TIMEOUT)
+            if response.status_code == 200:
+                total = int(response.headers.get('content-length', 0))
+                with fn.open('wb') as file, tqdm(
+                        desc=fn.stem,
+                        total=total,
+                        unit='iB',
+                        unit_scale=True,
+                        unit_divisor=1024,
+                        ncols=80
+                ) as bar:
+                    for data in response.iter_content(chunk_size=1024):
+                        size = file.write(data)
+                        bar.update(size)
+            else:
+                raise ConnectionError(
+                    f"Could not download {url} to {fn}: Error {response.status_code}")
         else:
-            raise ConnectionError(f"Could not download {url} to {fn}")
+            R = requests.get(url, allow_redirects=True, timeout=TIMEOUT)
+            if R.status_code == 200:
+                fn.write_text(R.text)
+            else:
+                raise ConnectionError(
+                    f"Could not download {url} to {fn}: Error {R.status_code}")
     except requests.exceptions.ConnectionError:
         raise ConnectionError(f"Could not download {url} to {fn}")
 
