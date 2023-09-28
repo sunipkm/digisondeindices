@@ -72,6 +72,8 @@ def download(url: str, fn: Path):
 def http_download(url: str, fn: Path):
     if not fn.parent.is_dir():
         raise NotADirectoryError(fn.parent)
+    if fn.exists():
+        return
 
     has_tqdm = False
     try:
