@@ -57,6 +57,7 @@ def todatetime(time: str | date | datetime | np.datetime64, tzaware: bool = True
 
     return dates
 
+
 def cli():
     """
     simple demo of retrieving DIDBase indices by date

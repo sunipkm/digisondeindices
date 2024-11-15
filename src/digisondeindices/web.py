@@ -9,6 +9,9 @@ import requests.exceptions
 import numpy as np
 import importlib.resources
 import os
+from natsort import natsorted
+
+from .io import convert_csv
 
 TIMEOUT = 15  # seconds
 
@@ -24,39 +27,60 @@ def downloadfile(time: np.ndarray, station: str, force: bool, dmuf: int = 3000) 
 
     time = np.asarray(time)
     tnow = datetime.today()
-    tmin = time.min()
-    tmax = time.max()
+    tmin: datetime = time.min()
+    tmax: datetime = time.max()
     if tmin > tnow:
         raise RuntimeError(
             'DIDBase package does not allow prediction retrieval.')
-
+    tmax: datetime = np.min([tmax, tnow])  # limit to current time
+    min_year = tmin.year
+    max_year = tmax.year
+    years = np.arange(min_year, max_year + 1)
+    min_mon = tmin.month
+    max_mon = tmax.month
     flist = []
-    for t in time:
-        if t < tnow:  # past
-            url = 'https://lgdc.uml.edu/common/DIDBGetValues?ursiCode=%s&charName=hmE,foE,hmF1,foF1,hmF2,foF2,hF,hF2,yF1,yF2,B0,TEC,MUFD&DMUF=%d&fromDate=%d.01.01+00:00:00&toDate=%d.01.01+00:00:00'
-            url = url % (station, dmuf, t.year, t.year + 1)
-            # try to load the nc file
-            fn = path / ('%s_%d_%d.nc' % (station, t.year, dmuf))
-
-            # forced or file expired or file does not exist
-            if force or not exist_ok(fn, tmax):
-                try:
-                    fn_txt = fn.with_suffix('.txt')  # get text file name
-                    # if text file does not exist or redownload is forced
-                    if force or not exist_ok(fn, tmax):
-                        download(url, fn_txt)  # download text file
-                    flist.append(fn_txt)  # append downloaded text file to list
-                    if fn.exists():  # if nc file exists
-                        fn.unlink()  # unlink nc file
-                except ConnectionError:
-                    raise ConnectionError(url)
-            else:
-                flist.append(fn)  # append existing nc file
-
+    lims = []
+    for y in years:
+        if y == min_year:
+            min_mon = tmin.month
         else:
-            raise RuntimeError(
-                'DIDBase package does not allow prediction retrieval.')
-    return list(set(flist))  # dedupe
+            min_mon = 1
+        if y == max_year:
+            max_mon = tmax.month
+        else:
+            max_mon = 12
+        for m in range(min_mon, max_mon + 1):
+            start = (y, m)
+            if m == 12:
+                end = (y + 1, 1)
+            else:
+                end = (y, m + 1)
+            lims.append((start, end))
+    for (start, end) in lims:
+        y0, m0 = start
+        y1, m1 = end
+        url = f'https://lgdc.uml.edu/common/DIDBGetValues?' \
+            f'ursiCode={station}&charName=hmE,foE,hmF1,foF1,hmF2,foF2,hF,hF2,yF1,yF2,B0,TEC,MUFD' '&' \
+            f'DMUF={dmuf}' '&' \
+            f'fromDate={y0:04d}.{m0:02d}.01+00:00:00' '&' \
+            f'toDate={y1:04d}.{m1:02d}.01+00:00:00'
+        # try to load the nc file
+        fn = path / (f'{station}_{y0:04d}_{m0:02d}_{dmuf}.nc')
+
+        # forced or file expired or file does not exist
+        if force or not exist_ok(fn, tmax):
+            try:
+                fn_txt = fn.with_suffix('.txt')  # get text file name
+                # if text file does not exist or redownload is forced
+                if force or not exist_ok(fn, tmax):
+                    download(url, fn_txt)  # download text file
+                # convert text file to nc file
+                flist.append(convert_csv(fn_txt, station, dmuf))  # append now existing nc file
+            except ConnectionError:
+                raise ConnectionError(url)
+        else:
+            flist.append(fn)  # append existing nc file
+    return natsorted(list(set(flist)), key=lambda f: f.stem)  # dedupe
 
 
 def download(url: str, fn: Path):
