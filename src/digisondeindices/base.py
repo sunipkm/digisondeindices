@@ -69,7 +69,7 @@ def cli():
     p.add_argument("-s", "--station", help='Observation station code e.g. AH223', type=str)
     a = p.parse_args()
 
-    inds = get_indices(a.date, p.station)
+    inds = get_indices(a.date, a.station)
 
     print(inds)
 
